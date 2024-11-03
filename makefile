@@ -1,0 +1,6 @@
+
+
+doc:
+	pkgsite -open .
+
+

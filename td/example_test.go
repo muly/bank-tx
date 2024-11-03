@@ -45,4 +45,6 @@ Subtotal: 17,537.72
 	for _, tx := range s.Transactions {
 		fmt.Printf("%+v\n", tx)
 	}
+
+	// Output: todo
 }
