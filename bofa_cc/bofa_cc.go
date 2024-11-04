@@ -41,7 +41,7 @@ func ParseStatement(data string) (*Statement, error) {
 	var transactions []Transaction
 	var accountNumber string
 	var periodStartDate, periodEndDate time.Time
-	var beginBalance, endBalance, totalPayments, totalPurchases, totalInterest float64
+	var beginBalance, endBalance, totalPayments, totalPurchases, totalFees, totalInterest float64
 	inCategory := ""
 	var err error
 
@@ -100,6 +100,13 @@ func ParseStatement(data string) (*Statement, error) {
 			}
 			continue
 		}
+		if strings.HasPrefix(line, "Fees Charged") && strings.Contains(line, "$") {
+			totalFees, _ = util.ParseFloat(strings.TrimPrefix(line, "Fees Charged "))
+			if err != nil {
+				fmt.Println("totalFees parse error:", err)
+			}
+			continue
+		}
 		if strings.HasPrefix(line, "Interest Charged") && strings.Contains(line, "$") {
 			totalInterest, _ = util.ParseFloat(strings.TrimPrefix(line, "Interest Charged "))
 			if err != nil {
@@ -140,8 +147,9 @@ func ParseStatement(data string) (*Statement, error) {
 	// fmt.Println(beginBalance, endBalance, totalPayments, totalPurchases, totalInterest)
 
 	// Validate balances
-	if !validateSummaryBalance(beginBalance, endBalance, totalPayments, totalPurchases, totalInterest) {
-		return nil, fmt.Errorf("summary balance validation failed")
+	if !validateSummaryBalance(beginBalance, totalPayments, totalPurchases, totalFees, totalInterest, endBalance) {
+		return nil, fmt.Errorf("summary balance validation failed: beginBalance %v, totalPayments %v, totalPurchases %v, totalFees %v, totalInterest %v, endBalance %v",
+			beginBalance, totalPayments, totalPurchases, totalFees, totalInterest, endBalance)
 	}
 
 	total := calculateTotal(transactions)
@@ -308,8 +316,8 @@ func validateTxBalance(beginBalance, endBalance, total float64) bool {
 }
 
 // Validate balance based on parsed totals
-func validateSummaryBalance(beginBalance, endBalance, totalPayments, totalPurchases, totalInterest float64) bool {
-	calculatedEndBalance := beginBalance + totalPayments + totalPurchases + totalInterest
+func validateSummaryBalance(beginBalance, totalPayments, totalPurchases, totalFees, totalInterest, endBalance float64) bool {
+	calculatedEndBalance := beginBalance + totalPayments + totalPurchases + totalFees + totalInterest
 	return util.RoundToOneDecimal(calculatedEndBalance) == util.RoundToOneDecimal(endBalance)
 }
 
