@@ -59,7 +59,7 @@ func ParseStatement(data string) (*Statement, error) {
 		}
 
 		// Parse Statement Period
-		if strings.Contains(line, "-") && strings.HasSuffix(line, "2024") { // TODO: need to replace this with a regex
+		if strings.Contains(line, "-") && strings.HasSuffix(line, "2023") { // TODO: need to replace this with a regex
 			periodStartDate, periodEndDate, err = parseStatementPeriod(line)
 			if err != nil {
 				return nil, err
@@ -266,7 +266,7 @@ func SaveTransactionsToCSV(statement Statement) error {
 	defer writer.Flush()
 
 	// Write CSV headers
-	writer.Write([]string{"TransactionDate", "PostingDate", "Description", "ReferenceNumber", "AccountNumber", "Amount", "Category"})
+	writer.Write([]string{"TransactionDate", "PostingDate", "Description", "ReferenceNumber", "AccountNumber", "Amount", "Category", "StatementAccountNumber", "StatementPeriod"})
 
 	// Write transaction data
 	for _, tx := range statement.Transactions {
@@ -278,7 +278,40 @@ func SaveTransactionsToCSV(statement Statement) error {
 			tx.AccountNumber,
 			fmt.Sprintf("%.2f", tx.Amount),
 			tx.Category,
+			statement.AccountNumber,
+			fmt.Sprintf("%s-%s", statement.PeriodStartDate.Format("2006-01-02"), statement.PeriodEndDate.Format("2006-01-02")),
 		})
+	}
+
+	return nil
+}
+
+func SaveStatementsToCSV(statements []Statement, filename string) error {
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	writer.Write([]string{"TransactionDate", "PostingDate", "Description", "ReferenceNumber", "AccountNumber", "Amount", "Category", "StatementAccountNumber", "StatementPeriod"})
+
+	for _, statement := range statements {
+		for _, tx := range statement.Transactions {
+			writer.Write([]string{
+				tx.TransactionDate.Format("01/02/2006"),
+				tx.PostingDate.Format("01/02/2006"),
+				tx.Description,
+				tx.ReferenceNumber,
+				tx.AccountNumber,
+				fmt.Sprintf("%.2f", tx.Amount),
+				tx.Category,
+				statement.AccountNumber,
+				fmt.Sprintf("%s-%s", statement.PeriodStartDate.Format("2006-01-02"), statement.PeriodEndDate.Format("2006-01-02")),
+			})
+		}
 	}
 
 	return nil
@@ -352,7 +385,7 @@ func calculateTotal(transactions []Transaction) float64 {
 }
 
 func validateTxBalance(beginBalance, endBalance, total float64) bool {
-	return util.RoundToOneDecimal(beginBalance+total) == util.RoundToOneDecimal(endBalance)
+	return util.RoundToOneDecimal(util.RoundToTwoDecimal(beginBalance+total)) == util.RoundToOneDecimal(util.RoundToTwoDecimal(endBalance))
 }
 
 // Validate balance based on parsed totals
@@ -360,24 +393,3 @@ func validateSummaryBalance(beginBalance, totalPayments, totalPurchases, totalFe
 	calculatedEndBalance := beginBalance + totalPayments + totalPurchases + totalFees + totalInterest
 	return util.RoundToOneDecimal(calculatedEndBalance) == util.RoundToOneDecimal(endBalance)
 }
-
-// func main() {
-// 	data, err := os.ReadFile("sample.txt")
-// 	if err != nil {
-// 		fmt.Println("Error opening file:", err)
-// 		return
-// 	}
-
-// 	statement, err := ParseStatement(string(data))
-// 	if err != nil {
-// 		fmt.Println("Error parsing statement:", err)
-// 		return
-// 	}
-
-// 	if err := SaveTransactionsToCSV(*statement); err != nil {
-// 		fmt.Println("Error writing to CSV:", err)
-// 		return
-// 	}
-
-// 	fmt.Println("Statement parsed and saved successfully.")
-// }
