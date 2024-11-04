@@ -59,9 +59,7 @@ func ParseStatement(data string) (*Statement, error) {
 		}
 
 		// Parse Statement Period
-		if strings.Contains(line, "-") && strings.HasSuffix(line, "2024") {
-
-			// Parse statement period for the CSV filename
+		if strings.Contains(line, "-") && strings.HasSuffix(line, "2024") { // TODO: need to replace this with a regex
 			periodStartDate, periodEndDate, err = parseStatementPeriod(line)
 			if err != nil {
 				return nil, err
@@ -115,7 +113,6 @@ func ParseStatement(data string) (*Statement, error) {
 			continue
 		}
 
-		// Identify and categorize transaction sections
 		if line == "Payments and Other Credits" ||
 			line == "Purchases and Adjustments" ||
 			line == "Interest Charged" ||
@@ -130,21 +127,27 @@ func ParseStatement(data string) (*Statement, error) {
 			continue // Skip the transaction header line
 		}
 
+		if strings.HasPrefix(line, "TOTAL PAYMENTS AND OTHER CREDITS FOR THIS PERIOD") ||
+			strings.HasPrefix(line, "TOTAL PURCHASES AND ADJUSTMENTS FOR THIS PERIOD") ||
+			strings.HasPrefix(line, "TOTAL INTEREST CHARGED FOR THIS PERIOD") ||
+			strings.HasPrefix(line, "TOTAL FEES FOR THIS PERIOD") {
+			continue // Skip the transaction subtotal line
+		}
+
 		transaction, err := ParseTransaction(line, periodStartDate, periodEndDate)
 		if err != nil {
 			return nil, err
 		}
 		if transaction == nil {
+			log.Printf("unprocessed line: %v", line)
 			continue // unwanted line
 		}
 
-		// transaction.TransactionDate = transaction.TransactionDate + "/" + year
-		// transaction.PostingDate = transaction.PostingDate + "/" + year
 		transaction.Category = inCategory
 
 		transactions = append(transactions, *transaction)
 	}
-	// fmt.Println(beginBalance, endBalance, totalPayments, totalPurchases, totalInterest)
+	// fmt.Println(beginBalance, endBalance, totalPayments, totalPurchases, totalFees, totalInterest)
 
 	// Validate balances
 	if !validateSummaryBalance(beginBalance, totalPayments, totalPurchases, totalFees, totalInterest, endBalance) {
@@ -175,40 +178,77 @@ func ParseTransaction(line string, startPeriod, endPeriod time.Time) (*Transacti
 	// txRegex := regexp.MustCompile(`(?m)^(\d{2}/\d{2})\s+(\d{2}/\d{2})\s+(.+?)\s+(\d+)\s+(-?\$?[\d,]+\.\d{2})$`)
 	// txRegex := regexp.MustCompile(`^(\d{2}/\d{2}) (\d{2}/\d{2}) (.*?) (\d{4}) (\d{4}) (-?\$?\d+\.\d{2})$`)
 	var txRegex = regexp.MustCompile(`(?m)^(\d{2}/\d{2})\s+(\d{2}/\d{2})\s+(.+?)\s+(\d{4})\s+(\d{4})\s+(-?\$?[\d,]+\.\d{2})$`)
+	interestRegex := regexp.MustCompile(`^(\d{1,2}/\d{1,2})\s+(\d{1,2}/\d{1,2})\s+(.+?)\s+(\d+\.\d{2})$`)
 
-	matches := txRegex.FindStringSubmatch(line)
-	if len(matches) != 7 {
-		log.Printf("line not processed: %s\n", line)
-		return nil, nil
+	transaction := Transaction{}
+
+	if matches := txRegex.FindStringSubmatch(line); matches != nil {
+		transactionDate := matches[1]
+		postingDate := matches[2]
+		description := matches[3]
+		referenceNumber := matches[4]
+		accountNumber := matches[5]
+		amountStr := matches[6]
+
+		amountStr = strings.ReplaceAll(amountStr, "$", "")
+		amountStr = strings.ReplaceAll(amountStr, ",", "")
+
+		amount, err := util.ParseFloat(amountStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse amount: %s, error: %v", amountStr, err)
+		}
+
+		transaction = Transaction{
+			Description:     description,
+			ReferenceNumber: referenceNumber,
+			AccountNumber:   accountNumber,
+			Amount:          amount,
+		}
+
+		transaction.TransactionDate, err = addYearToDate(transactionDate, startPeriod, endPeriod)
+		if err != nil {
+			return nil, fmt.Errorf("error adding year to transaction date: %v", err)
+		}
+		transaction.PostingDate, err = addYearToDate(postingDate, startPeriod, endPeriod)
+		if err != nil {
+			return nil, fmt.Errorf("error adding year to posting date: %v", err)
+		}
+
+		return &transaction, nil
 	}
 
-	transactionDate := matches[1]
-	postingDate := matches[2]
-	description := matches[3]
-	referenceNumber := matches[4]
-	accountNumber := matches[5]
-	amountStr := matches[6]
+	if matches := interestRegex.FindStringSubmatch(line); matches != nil {
+		transactionDate := matches[1]
+		postingDate := matches[2]
+		description := matches[3]
+		amountStr := matches[4]
 
-	amountStr = strings.ReplaceAll(amountStr, "$", "")
-	amountStr = strings.ReplaceAll(amountStr, ",", "")
+		amountStr = strings.ReplaceAll(amountStr, "$", "")
+		amountStr = strings.ReplaceAll(amountStr, ",", "")
 
-	amount, err := util.ParseFloat(amountStr)
-	// amount, err := strconv.ParseFloat(amountStr, 64)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse amount: %s, error: %v", amountStr, err)
+		amount, err := util.ParseFloat(amountStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse amount: %s, error: %v", amountStr, err)
+		}
+
+		transaction = Transaction{
+			Description: description,
+			Amount:      amount,
+		}
+
+		transaction.TransactionDate, err = addYearToDate(transactionDate, startPeriod, endPeriod)
+		if err != nil {
+			return nil, fmt.Errorf("error adding year to transaction date: %v", err)
+		}
+		transaction.PostingDate, err = addYearToDate(postingDate, startPeriod, endPeriod)
+		if err != nil {
+			return nil, fmt.Errorf("error adding year to posting date: %v", err)
+		}
+
+		return &transaction, nil
 	}
 
-	transaction := Transaction{
-		Description:     description,
-		ReferenceNumber: referenceNumber,
-		AccountNumber:   accountNumber,
-		Amount:          amount,
-	}
-
-	transaction.TransactionDate, err = addYearToDate(transactionDate, startPeriod, endPeriod)
-	transaction.PostingDate, err = addYearToDate(postingDate, startPeriod, endPeriod)
-
-	return &transaction, nil
+	return nil, nil
 }
 
 // SaveTransactionsToCSV writes transactions to CSV
