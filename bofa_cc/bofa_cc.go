@@ -109,7 +109,10 @@ func ParseStatement(data string) (*Statement, error) {
 		}
 
 		// Identify and categorize transaction sections
-		if line == "Payments and Other Credits" || line == "Purchases and Adjustments" || line == "Interest Charged" {
+		if line == "Payments and Other Credits" ||
+			line == "Purchases and Adjustments" ||
+			line == "Interest Charged" ||
+			line == "Fees" {
 			inCategory = line
 			continue // Skip the header line
 		}
@@ -156,7 +159,7 @@ func ParseStatement(data string) (*Statement, error) {
 	}
 
 	return &statement, nil
-	
+
 }
 
 // ParseTransaction parses the given transaction entry
