@@ -46,5 +46,16 @@ Subtotal: 17,537.72
 		fmt.Printf("%+v\n", tx)
 	}
 
-	// Output: todo
+	// Output:
+	// {Category:Electronic Deposits PostingDate:2023-03-22 00:00:00 +0000 UTC Description:TD ZELLE RECEIVED, erer434ree r34rere re5rerer4344re Amount:418}
+	// {Category:Electronic Deposits PostingDate:2023-04-02 00:00:00 +0000 UTC Description:ACH DEPOSIT, rere erer ererereL Amount:6377.3}
+	// {Category:Electronic Deposits PostingDate:2023-04-08 00:00:00 +0000 UTC Description:ACH DEPOSIT, fererer  erereer dfdferr Amount:6377.3}
+	// {Category:Electronic Deposits PostingDate:2023-04-18 00:00:00 +0000 UTC Description:ACH DEPOSIT, rere rer4tr rtrtrrtr Amount:3745.84}
+	// {Category:Electronic Payments PostingDate:2023-03-28 00:00:00 +0000 UTC Description:ELECTRONIC PMT-WEB, BKOFAM CK WEBXFR TRANSFER ****234533 Amount:1000}
+	// {Category:Electronic Payments PostingDate:2023-03-28 00:00:00 +0000 UTC Description:TD BILL PAY SERV, BANK OF AMERICA ONLINE PMT TDB****34454454 Amount:4223.27}
+	// {Category:Electronic Payments PostingDate:2023-04-11 00:00:00 +0000 UTC Description:TD BILL PAY SERV, BANK OF AMERICA ONLINE PMT TDB****34454454 Amount:500}
+	// {Category:Electronic Payments PostingDate:2023-04-11 00:00:00 +0000 UTC Description:TD BILL PAY SERV, BANK OF AMERICA ONLINE PMT TDB****34454454 Amount:4313.34}
+	// {Category:Electronic Payments PostingDate:2023-04-11 00:00:00 +0000 UTC Description:ELECTRONIC PMT-WEB, EEERERERERE MTG PAYMENTS ****311244 Amount:6208.46}
+	// {Category:Electronic Payments PostingDate:2023-04-12 00:00:00 +0000 UTC Description:ELECTRONIC PMT-WEB, ERERERE CARD RER PAYMNT ****63101563793 Amount:292.65}
+	// {Category:Electronic Payments PostingDate:2023-04-12 00:00:00 +0000 UTC Description:ELECTRONIC PMT-WEB, REREREER CK WEBXFR TRANSFER ****062167 Amount:1000}
 }

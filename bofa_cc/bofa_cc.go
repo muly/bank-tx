@@ -1,8 +1,10 @@
-package main
+// package bofa_cc provides the parsing functions to process the bofa credit card statements
+package bofa_cc
 
 import (
 	"encoding/csv"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -14,8 +16,8 @@ import (
 // TODO: interest lines are not included in the parsing logic.
 
 type Transaction struct {
-	TransactionDate string
-	PostingDate     string
+	TransactionDate time.Time
+	PostingDate     time.Time
 	Description     string
 	ReferenceNumber string
 	AccountNumber   string
@@ -37,11 +39,11 @@ func ParseStatement(data string) (*Statement, error) {
 	lines := strings.Split(data, "\n")
 
 	var transactions []Transaction
-	var accountNumber, periodStr, year string
+	var accountNumber string
+	var periodStartDate, periodEndDate time.Time
 	var beginBalance, endBalance, totalPayments, totalPurchases, totalInterest float64
 	inCategory := ""
 	var err error
-
 
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
@@ -58,12 +60,13 @@ func ParseStatement(data string) (*Statement, error) {
 
 		// Parse Statement Period
 		if strings.Contains(line, "-") && strings.HasSuffix(line, "2024") {
-			periodStr = line
-			// var err error
-			// _, year, err = parseStatementPeriod(periodStr)
-			// if err != nil {
-			// 	return nil, fmt.Errorf("invalid period format: %w", err)
-			// }
+
+			// Parse statement period for the CSV filename
+			periodStartDate, periodEndDate, err = parseStatementPeriod(line)
+			if err != nil {
+				return nil, err
+			}
+
 			continue
 		}
 
@@ -117,7 +120,7 @@ func ParseStatement(data string) (*Statement, error) {
 			continue // Skip the transaction header line
 		}
 
-		transaction, err := ParseTransaction(line)
+		transaction, err := ParseTransaction(line, periodStartDate, periodEndDate)
 		if err != nil {
 			return nil, err
 		}
@@ -125,8 +128,8 @@ func ParseStatement(data string) (*Statement, error) {
 			continue // unwanted line
 		}
 
-		transaction.TransactionDate = transaction.TransactionDate + "/" + year
-		transaction.PostingDate = transaction.PostingDate + "/" + year
+		// transaction.TransactionDate = transaction.TransactionDate + "/" + year
+		// transaction.PostingDate = transaction.PostingDate + "/" + year
 		transaction.Category = inCategory
 
 		transactions = append(transactions, *transaction)
@@ -143,12 +146,6 @@ func ParseStatement(data string) (*Statement, error) {
 		return nil, fmt.Errorf("tx balance validation failed. calculated end balance %v, expected end balance %v", util.RoundToTwoDecimal(beginBalance+total), endBalance)
 	}
 
-	// Parse statement period for the CSV filename
-	periodStartDate, periodEndDate, err := parseStatementPeriod(periodStr)
-	if err != nil {
-		return nil, err
-	}
-
 	statement := Statement{
 		AccountNumber:    accountNumber,
 		PeriodStartDate:  periodStartDate,
@@ -159,17 +156,18 @@ func ParseStatement(data string) (*Statement, error) {
 	}
 
 	return &statement, nil
+	
 }
 
 // ParseTransaction parses the given transaction entry
-func ParseTransaction(line string) (*Transaction, error) {
+func ParseTransaction(line string, startPeriod, endPeriod time.Time) (*Transaction, error) {
 	// txRegex := regexp.MustCompile(`(?m)^(\d{2}/\d{2})\s+(\d{2}/\d{2})\s+(.+?)\s+(\d+)\s+(-?\$?[\d,]+\.\d{2})$`)
 	// txRegex := regexp.MustCompile(`^(\d{2}/\d{2}) (\d{2}/\d{2}) (.*?) (\d{4}) (\d{4}) (-?\$?\d+\.\d{2})$`)
 	var txRegex = regexp.MustCompile(`(?m)^(\d{2}/\d{2})\s+(\d{2}/\d{2})\s+(.+?)\s+(\d{4})\s+(\d{4})\s+(-?\$?[\d,]+\.\d{2})$`)
 
 	matches := txRegex.FindStringSubmatch(line)
 	if len(matches) != 7 {
-		fmt.Printf("line not processed: %s\n", line)
+		log.Printf("line not processed: %s\n", line)
 		return nil, nil
 	}
 
@@ -190,13 +188,14 @@ func ParseTransaction(line string) (*Transaction, error) {
 	}
 
 	transaction := Transaction{
-		TransactionDate: transactionDate,
-		PostingDate:     postingDate,
 		Description:     description,
 		ReferenceNumber: referenceNumber,
 		AccountNumber:   accountNumber,
 		Amount:          amount,
 	}
+
+	transaction.TransactionDate, err = addYearToDate(transactionDate, startPeriod, endPeriod)
+	transaction.PostingDate, err = addYearToDate(postingDate, startPeriod, endPeriod)
 
 	return &transaction, nil
 }
@@ -221,8 +220,8 @@ func SaveTransactionsToCSV(statement Statement) error {
 	// Write transaction data
 	for _, tx := range statement.Transactions {
 		writer.Write([]string{
-			tx.TransactionDate,
-			tx.PostingDate,
+			tx.TransactionDate.Format("01/02/2006"),
+			tx.PostingDate.Format("01/02/2006"),
 			tx.Description,
 			tx.ReferenceNumber,
 			tx.AccountNumber,
@@ -236,24 +235,61 @@ func SaveTransactionsToCSV(statement Statement) error {
 
 // Helper functions
 
-// Helper function to parse the date format "September 12 - October 11, 2024"
 func parseStatementPeriod(periodStr string) (time.Time, time.Time, error) {
-	periodRegex := regexp.MustCompile(`(\w+ \d+) - (\w+ \d+), (\d{4})`)
-	matches := periodRegex.FindStringSubmatch(periodStr)
-	if len(matches) != 4 {
+	// Split the period string to get start and end dates
+	parts := strings.Split(periodStr, " - ")
+	if len(parts) != 2 {
 		return time.Time{}, time.Time{}, fmt.Errorf("invalid statement period format")
 	}
-	year := matches[3]
-	// Format period as YYYY-MM-DD to YYYY-MM-DD
-	startDate, err := time.Parse("January 2 2006", matches[1]+" "+year)
+
+	// Define the year format for the end date part
+	yearFormat := "January 2, 2006"
+	// Define the format for the start date part, which lacks a year
+	startDateFormat := "January 2"
+
+	// Parse the end date (includes the year)
+	endPeriod, err := time.Parse(yearFormat, parts[1])
 	if err != nil {
-		return time.Time{}, time.Time{}, err
+		return time.Time{}, time.Time{}, fmt.Errorf("failed to parse end period: %v", err)
 	}
-	endDate, err := time.Parse("January 2 2006", matches[2]+" "+year)
+
+	// Parse the start date (no year)
+	startDateNoYear, err := time.Parse(startDateFormat, parts[0])
 	if err != nil {
-		return time.Time{}, time.Time{}, err
+		return time.Time{}, time.Time{}, fmt.Errorf("failed to parse start period: %v", err)
 	}
-	return startDate, endDate, nil
+
+	// Determine the year for the start date
+	startYear := endPeriod.Year()
+	if startDateNoYear.Month() > endPeriod.Month() {
+		// If start month is after end month, assume the start date is in the previous year
+		startYear = endPeriod.Year() - 1
+	}
+
+	// Create startPeriod with the derived year
+	startPeriod := time.Date(startYear, startDateNoYear.Month(), startDateNoYear.Day(), 0, 0, 0, 0, time.UTC)
+
+	return startPeriod, endPeriod, nil
+}
+
+// addYearToDate adds the correct year to a given month-day date based on the statement period
+func addYearToDate(dateStr string, startPeriod, endPeriod time.Time) (time.Time, error) {
+	parsedDate, err := time.Parse("01/02", dateStr)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	// Set the year based on start and end periods
+	year := endPeriod.Year()
+
+	// For cross-year periods, dates before the end month should use startPeriod's year
+	if startPeriod.Year() != endPeriod.Year() {
+		if parsedDate.Month() > endPeriod.Month() {
+			year = startPeriod.Year()
+		}
+	}
+
+	return parsedDate.AddDate(year, 0, 0), nil
 }
 
 func calculateTotal(transactions []Transaction) float64 {
@@ -274,23 +310,23 @@ func validateSummaryBalance(beginBalance, endBalance, totalPayments, totalPurcha
 	return util.RoundToOneDecimal(calculatedEndBalance) == util.RoundToOneDecimal(endBalance)
 }
 
-func main() {
-	data, err := os.ReadFile("sample.txt")
-	if err != nil {
-		fmt.Println("Error opening file:", err)
-		return
-	}
+// func main() {
+// 	data, err := os.ReadFile("sample.txt")
+// 	if err != nil {
+// 		fmt.Println("Error opening file:", err)
+// 		return
+// 	}
 
-	statement, err := ParseStatement(string(data))
-	if err != nil {
-		fmt.Println("Error parsing statement:", err)
-		return
-	}
+// 	statement, err := ParseStatement(string(data))
+// 	if err != nil {
+// 		fmt.Println("Error parsing statement:", err)
+// 		return
+// 	}
 
-	if err := SaveTransactionsToCSV(*statement); err != nil {
-		fmt.Println("Error writing to CSV:", err)
-		return
-	}
+// 	if err := SaveTransactionsToCSV(*statement); err != nil {
+// 		fmt.Println("Error writing to CSV:", err)
+// 		return
+// 	}
 
-	fmt.Println("Statement parsed and saved successfully.")
-}
+// 	fmt.Println("Statement parsed and saved successfully.")
+// }

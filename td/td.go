@@ -1,3 +1,5 @@
+// package td provides the parsing functions to process the td bank checking account statements
+// TODO: need to verify if this code can process savings account statements aswell
 package td
 
 import (
